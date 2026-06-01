@@ -41,7 +41,7 @@ Implemented now:
 | Safety | API key redaction by default |
 | Local testing | Built-in mock OpenAI-compatible server |
 
-Planned next: SDK compatibility, problem scan/conformance mode, provider dialects, ignored-parameter detection, performance profile, regression diff, JUnit/HTML reports, testpacks, and broader endpoint coverage.
+Planned next: SDK compatibility, problem scan/conformance mode, provider dialects, ignored-parameter detection, performance profile, cost/billing guardrails, regression diff, JUnit/HTML reports, testpacks, and broader endpoint coverage.
 
 ## Install
 
@@ -192,6 +192,7 @@ The next product milestone is production readiness, not just raw HTTP coverage:
 - **Provider dialects and adapters** for OpenAI strict, OpenAI legacy, Azure OpenAI, reasoning models, and local LLM servers.
 - **Ignored-parameter detection** for `max_tokens`, `stop`, forced `tool_choice`, JSON mode, strict schemas, and `n`.
 - **Performance profile** with p50/p95/p99 latency, TTFT, tokens/sec, small-concurrency stability, warmup requests, thresholds, and perf diff.
+- **Cost and billing guardrails** with pricing YAML, dry-run estimates, budget blocking, usage consistency checks, billing metadata checks, and cost regression.
 - **Production readiness checks** for rate limits, token accounting, protocol behavior, security/redaction, SLOs, regression snapshots, debug replay, and resource cleanup.
 
 Read [PRD.md](PRD.md) for the full product plan and endpoint coverage registry.

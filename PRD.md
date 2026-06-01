@@ -353,33 +353,288 @@ Rules:
 - Cleanup is best-effort and recorded in the report.
 - Destructive cleanup requires explicit confirmation or `--destructive`.
 
-### 14. Cost Estimate and Budget Guard
+### 14. Cost, Billing, and Budget Guard
 
-Add cost controls before enabling costly endpoint families.
+Cost must be a separate report dimension. Normal text-only compatibility checks should be extremely cheap by default; expensive test families must remain disabled unless explicitly requested.
+
+Default cost targets:
+
+```txt
+quick        < $0.01
+core         < $0.05
+agent        < $0.10
+strict       < $0.30
+perf small   < $0.30
+```
+
+Default safe limits:
+
+```txt
+octest quick      max 6 requests
+octest core       max 20 requests
+octest agent      max 35 requests
+octest strict     max 60 requests
+octest perf       default 20 requests, concurrency 2
+```
+
+Costly test families are off by default:
+
+```txt
+images
+audio
+realtime
+fine_tuning
+long_context
+large benchmark/load tests
+built-in paid tools such as web/file search
+```
+
+#### Cost Commands
 
 ```bash
-octest run --max-cost-usd 0.10
+octest cost
+octest billing
+octest budget
+octest cost-diff baseline.json current.json
+```
+
+`octest cost` estimates cost from usage metadata and pricing config.
+
+`octest billing` checks provider-reported billing/cost metadata when available.
+
+`octest budget` validates whether a planned run is allowed under configured budget.
+
+`octest cost-diff` detects cost regression between reports.
+
+#### Three Cost Levels
+
+```txt
+estimated_cost = available for all providers with token usage or estimates
+reported_cost  = available when provider exposes usage/cost metadata
+actual_cost    = available only when provider exposes billing/cost API
+```
+
+Estimated cost formula:
+
+```txt
+cost = (input_tokens / 1_000_000 * input_price)
+     + (cached_input_tokens / 1_000_000 * cached_input_price)
+     + (output_tokens / 1_000_000 * output_price)
+```
+
+Provider pricing differs, so `octest` must not hardcode a complete global provider price table. Use a pricing file.
+
+#### Pricing Config
+
+```yaml
+pricing:
+  currency: USD
+  unit: per_1m_tokens
+
+  models:
+    gpt-compatible:
+      input: 0.75
+      cached_input: 0.075
+      output: 4.50
+
+    cheap-model:
+      input: 0.20
+      output: 1.25
+
+rules:
+  include_cached_tokens: true
+  include_reasoning_tokens: true
+  unknown_usage_behavior: warning
+```
+
+Budget config:
+
+```yaml
+cost:
+  enabled: true
+  max_cost_usd: 0.10
+  default_input_token_estimate: 300
+  default_output_token_estimate: 100
+  block_costly_tests: true
+
+costly_tests:
+  images: false
+  audio: false
+  realtime: false
+  fine_tuning: false
+  long_context: false
+```
+
+#### Budget Guard
+
+```bash
+octest run --profile agent --max-cost-usd 0.10
+octest perf --requests 100 --max-cost-usd 0.25
+octest cost --dry-run
 octest run --dry-run-cost
+```
+
+Pre-run output:
+
+```txt
+Estimated Budget:
+  Profile      : agent
+  Requests     : 35
+  Max input    : ~21,000 tokens
+  Max output   : ~5,250 tokens
+  Est. cost    : $0.039
+  Budget limit : $0.100
+
+Status: OK
+
+Costly tests disabled:
+  images, audio, realtime, fine-tuning, long-context
+```
+
+Blocked output:
+
+```txt
+Budget guard blocked this run.
+
+Estimated cost: $0.42
+Max allowed   : $0.10
+
+Use --max-cost-usd 0.50 to continue.
+```
+
+#### Reported Cost and Usage Metadata
+
+Cost checks must validate both presence and consistency of usage metadata.
+
+Fields to inspect:
+
+```txt
+usage.prompt_tokens
+usage.completion_tokens
+usage.total_tokens
+usage.input_tokens
+usage.output_tokens
+usage.cached_tokens
+usage.reasoning_tokens
+x-request-cost
+x-usage-cost
+x-credits-remaining
+```
+
+Required checks:
+
+```txt
+usage object present
+total_tokens = prompt_tokens + completion_tokens where applicable
+usage appears on non-stream response
+usage appears in stream when include_usage is enabled
+cached token metadata valid when available
+cost header reported if provider claims billing metadata
+```
+
+Actual billed cost is only supported through provider-specific adapters when billing, cost, dashboard, or credit APIs exist.
+
+#### Cost Test IDs
+
+```txt
+cost.usage_present
+cost.usage_total_consistent
+cost.usage_stream_present
+cost.cached_tokens_present
+cost.estimated_request_cost
+cost.estimated_profile_cost
+cost.actual_billing_api_available
+cost.reported_vs_estimated_drift
+cost.max_budget_guard
+cost.cost_per_successful_request
+cost.cost_per_1k_output_tokens
+cost.cost_regression
+```
+
+#### Cost Report Shape
+
+```json
+{
+  "cost": {
+    "currency": "USD",
+    "estimated_total": 0.0392,
+    "avg_cost_per_request": 0.00112,
+    "requests": 35,
+    "input_tokens": 21400,
+    "output_tokens": 5280,
+    "budget": {
+      "limit": 0.10,
+      "status": "ok"
+    }
+  }
+}
+```
+
+#### Cost Regression
+
+```bash
+octest cost-diff baseline.json current.json
 ```
 
 Output:
 
 ```txt
-Estimated test cost:
-Core: low
-Agent: low
-Embeddings: low
-Images: high
-Audio: medium
-Fine-tuning: disabled
+Cost regression detected:
+
+Agent profile:
+  baseline: $0.041
+  current : $0.083
+  change  : +102%
+
+Reason:
+  structured_output test now uses 2.1x more output tokens
 ```
 
-Rules:
+Config:
 
-- Costly tests remain disabled by default.
-- `--max-cost-usd` blocks execution when estimate exceeds budget.
-- `--dry-run-cost` performs no provider calls.
-- Unknown pricing should be reported as unknown, not guessed.
+```yaml
+cost_regression:
+  fail_if_cost_increase_percent: 30
+  fail_if_output_tokens_increase_percent: 50
+```
+
+#### Cost Score
+
+Cost score is separate from compatibility and performance:
+
+```txt
+Compatibility Score : 86/100
+Performance Score   : 74/100
+Cost Score          : 91/100
+Production Score    : 81/100
+```
+
+Cost score inputs:
+
+```txt
+cost per request
+cost per successful request
+cost per 1k output tokens
+usage metadata accuracy
+billing transparency
+cost regression
+budget compliance
+```
+
+Roadmap:
+
+```txt
+MVP  : estimated cost + budget guard
+V1   : usage consistency + stream usage + pricing YAML
+V2   : actual billing API adapter
+V3   : cost regression + production cost score
+```
+
+References:
+
+- OpenAI pricing: https://developers.openai.com/api/docs/pricing
+- OpenAI token terminology: https://help.openai.com/en/articles/7127987-what-is-the-difference-between-prompt-tokens-and-completion-tokens
+- OpenAI Usage API and Costs API cookbook: https://developers.openai.com/cookbook/examples/completions_usage_api
 
 ### 15. Model Capability Matrix
 
