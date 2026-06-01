@@ -1,24 +1,71 @@
 # openai-compatible-tester-cli
 
-A Rust CLI for checking whether an API endpoint is actually compatible with OpenAI-style APIs.
+**A fast Rust CLI for testing whether an "OpenAI-compatible" API is actually compatible.**
 
-`curl` tells you the API is alive. `octest` tells you whether it behaves like an OpenAI-compatible API.
+Many providers, gateways, proxies, and local inference servers claim OpenAI compatibility. In practice, compatibility often breaks around streaming, tool calling, structured outputs, usage metadata, error shapes, SDK parsing, and ignored parameters.
+
+```txt
+curl tells you the API is alive.
+octest tells you whether it behaves like an OpenAI-compatible API.
+```
+
+`openai-compatible-tester-cli` ships the `octest` binary: a CI-friendly compatibility tester for developers building LLM gateways, provider APIs, local model servers, and agent infrastructure.
+
+## Why
+
+Raw HTTP checks are not enough. The dangerous failures are usually silent:
+
+- `tool_choice` is accepted but ignored.
+- `response_format` returns JSON, but not the requested schema.
+- Streaming works, but not as valid SSE.
+- `usage` is missing, misplaced, or inconsistent.
+- Invalid models silently fall back to another model.
+- A request works with `curl`, then fails in an SDK or agent framework.
+
+`octest` is built to catch those compatibility gaps and turn them into repeatable reports.
+
+## Current MVP
+
+Implemented now:
+
+| Area | Coverage |
+|---|---|
+| Models | `GET /models`, `GET /models/{model}` |
+| Chat | Basic, system message, multi-turn, common parameters |
+| Streaming | SSE parsing, `[DONE]`, first-token timing, stream usage |
+| Agent | Tool calling, tool result flow |
+| Schema | JSON mode, strict structured output checks |
+| Embeddings | Single and batch input |
+| Errors | Invalid model, invalid JSON, readable error shape |
+| Reports | Terminal, JSON, Markdown |
+| Safety | API key redaction by default |
+| Local testing | Built-in mock OpenAI-compatible server |
+
+Planned next: SDK compatibility, problem scan/conformance mode, provider dialects, ignored-parameter detection, performance profile, regression diff, JUnit/HTML reports, testpacks, and broader endpoint coverage.
 
 ## Install
+
+From this checkout:
 
 ```bash
 cargo install --path .
 ```
 
-## Quick Test
+Then:
 
-Start the built-in mock server in one terminal:
+```bash
+octest --help
+```
+
+## Quick Local Demo
+
+Start the built-in mock server:
 
 ```bash
 octest mock-server --port 8080
 ```
 
-Run a local compatibility check in another terminal:
+Run a quick compatibility scan:
 
 ```bash
 octest quick \
@@ -27,7 +74,9 @@ octest quick \
   --no-auth
 ```
 
-## Core Compatibility Test
+## Test a Provider
+
+Core compatibility:
 
 ```bash
 octest run \
@@ -38,7 +87,7 @@ octest run \
   --output report.json
 ```
 
-## Agent Compatibility Test
+Agent compatibility:
 
 ```bash
 octest run \
@@ -50,7 +99,7 @@ octest run \
   --output COMPATIBILITY.md
 ```
 
-## Embeddings Test
+Embeddings:
 
 ```bash
 octest embeddings \
@@ -61,7 +110,7 @@ octest embeddings \
 
 ## Config File
 
-Create a template:
+Create a starter config:
 
 ```bash
 octest init provider.yaml
@@ -73,23 +122,43 @@ Run from config:
 octest run -c provider.yaml
 ```
 
-CLI flags override values from the YAML config. API keys are read from `--api-key`, then `--api-key-env`, and are redacted from output.
+CLI flags override YAML values. API keys are read from `--api-key`, then `--api-key-env`, and are redacted from output and reports.
 
 ## Reports
 
-Supported MVP formats:
+Supported MVP report formats:
 
 - `terminal`
 - `json`
 - `markdown`
 
-Convert a saved JSON report to Markdown:
+Convert a saved JSON report:
 
 ```bash
 octest report report.json --format markdown --output COMPATIBILITY.md
 ```
 
-## Exit Codes
+Example JSON report shape:
+
+```json
+{
+  "score": {
+    "overall": 100,
+    "max": 100,
+    "grade": "full_compatible"
+  },
+  "features": {
+    "chat_completions": "passed",
+    "streaming": "passed",
+    "tool_calling": "passed",
+    "structured_outputs": "passed"
+  }
+}
+```
+
+## CI Behavior
+
+Exit codes are designed for automation:
 
 | Code | Meaning |
 |---:|---|
@@ -99,41 +168,57 @@ octest report report.json --format markdown --output COMPATIBILITY.md
 | 5 | Internal CLI error |
 | 6 | Score below `--min-score` |
 
-## MVP Coverage
+Example:
 
-Implemented in this repository:
+```bash
+octest run \
+  --base-url "$OPENAI_COMPAT_BASE_URL" \
+  --api-key "$OPENAI_COMPAT_API_KEY" \
+  --model "$OPENAI_COMPAT_MODEL" \
+  --profile core \
+  --format json \
+  --output report.json \
+  --min-score 80
+```
 
-- `GET /models`
-- `GET /models/{model}`
-- `POST /chat/completions`
-- Chat streaming via SSE
-- Usage object checks
-- Error format checks
-- Tool calling
-- Tool result follow-up
-- JSON mode
-- Structured output
-- Embeddings single and batch
-- Terminal, JSON, and Markdown reports
-- YAML config template
-- Built-in mock server
+See [examples/github-action.yaml](examples/github-action.yaml) for a GitHub Actions starter workflow.
 
-Declarative YAML test execution, JUnit XML, HTML, badge, matrix, Docker, Files/Batches/Images/Audio/Responses APIs, and release packaging are planned after the MVP foundation.
-
-## Next Priority
+## Roadmap
 
 The next product milestone is production readiness, not just raw HTTP coverage:
 
-- SDK compatibility mode for `openai-python`, `openai-node`, Vercel AI SDK, LiteLLM, and LangChain.
-- Provider dialect/adapters for OpenAI strict, OpenAI legacy, Azure OpenAI, and local LLM servers.
-- Capability discovery before scoring.
-- Problem-driven conformance scan for "fake OpenAI-compatible" behavior: silent fallback, ignored tools/schema/token limits, invalid model fallback, non-standard usage, SDK parse failure.
-- Ignored-parameter detection for `max_tokens`, `stop`, forced `tool_choice`, JSON mode, and strict schemas.
-- Separate performance profile with p50/p95/p99 latency, TTFT, tokens/sec, small-concurrency stability, warmup requests, thresholds, and perf diff.
-- Rate-limit, context-length, token-limit, and token accounting behavior.
-- Security/redaction, protocol-level compatibility, provider claim verification, and safe fuzzing.
-- Contract testing, golden snapshots, debug dumps, replay, and curl/HAR-style exports.
-- Regression baseline/diff for CI.
-- Resource lifecycle cleanup, cost guards, SLO/production readiness checks, local LLM presets, and Azure dialect.
+- **SDK compatibility mode** for `openai-python`, `openai-node`, Vercel AI SDK, LiteLLM, and LangChain.
+- **Problem-driven conformance scan** for fake OpenAI-compatible behavior: silent fallback, ignored tools/schema/token limits, non-standard usage, and SDK parse failures.
+- **Provider dialects and adapters** for OpenAI strict, OpenAI legacy, Azure OpenAI, reasoning models, and local LLM servers.
+- **Ignored-parameter detection** for `max_tokens`, `stop`, forced `tool_choice`, JSON mode, strict schemas, and `n`.
+- **Performance profile** with p50/p95/p99 latency, TTFT, tokens/sec, small-concurrency stability, warmup requests, thresholds, and perf diff.
+- **Production readiness checks** for rate limits, token accounting, protocol behavior, security/redaction, SLOs, regression snapshots, debug replay, and resource cleanup.
 
-See [PRD.md](PRD.md) for the full roadmap, future endpoint registry, and deferred scope.
+Read [PRD.md](PRD.md) for the full product plan and endpoint coverage registry.
+
+## Development
+
+Run tests:
+
+```bash
+cargo test
+```
+
+Format:
+
+```bash
+cargo fmt --all
+```
+
+The current codebase includes focused unit tests for config merging, scoring, report rendering, registry selection, redaction, JSON helpers, and client parsing utilities.
+
+## Security
+
+`octest` treats secrets as sensitive by default:
+
+- API keys are read from flags or environment variables.
+- Authorization values are redacted from output.
+- Reports are designed to be safe to commit.
+- Raw debug dumps are not enabled by default.
+
+Do not run costly or destructive endpoint families without explicit flags when those features are added.
