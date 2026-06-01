@@ -1,0 +1,29 @@
+name: API Compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install octest
+        run: cargo install --path .
+      - name: Run compatibility test
+        run: |
+          octest run \
+            --base-url "${{ secrets.OPENAI_COMPAT_BASE_URL }}" \
+            --api-key "${{ secrets.OPENAI_COMPAT_API_KEY }}" \
+            --model "${{ vars.OPENAI_COMPAT_MODEL }}" \
+            --profile core \
+            --format json \
+            --output report.json \
+            --min-score 80
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-report
+          path: report.json

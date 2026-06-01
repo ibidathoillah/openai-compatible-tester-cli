@@ -1,0 +1,30 @@
+name: provider
+base_url: https://api.example.com/v1
+api_key_env: PROVIDER_API_KEY
+no_auth: false
+
+models:
+  chat: gpt-compatible
+  embeddings: text-embedding-compatible
+
+profiles:
+  - agent
+
+timeouts:
+  connect_ms: 5000
+  request_ms: 60000
+  stream_ms: 120000
+  first_token_ms: 15000
+
+features:
+  costly: false
+  destructive: false
+  strict: false
+  redact: true
+
+thresholds:
+  min_score: 80
+
+output:
+  format: json
+  path: reports/provider.json

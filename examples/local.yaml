@@ -1,0 +1,21 @@
+name: local-mock
+base_url: http://localhost:8080/v1
+api_key_env: OPENAI_API_KEY
+no_auth: true
+
+models:
+  chat: mock-chat
+  embeddings: mock-embedding
+
+profiles:
+  - core
+
+features:
+  costly: false
+  destructive: false
+  strict: false
+  redact: true
+
+output:
+  format: json
+  path: reports/local.json

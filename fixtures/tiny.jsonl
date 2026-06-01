@@ -1,0 +1,1 @@
+{"custom_id":"octest-1","method":"POST","url":"/v1/chat/completions","body":{"model":"mock-chat","messages":[{"role":"user","content":"Reply with exactly: pong"}]}}
